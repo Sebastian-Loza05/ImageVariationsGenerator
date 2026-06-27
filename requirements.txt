@@ -1,0 +1,32 @@
+# Dependencias del sistema generativo interactivo (nivel avanzado).
+# PyTorch se instala aparte en setup_env.sh (con el indice CUDA correcto).
+
+# Datos / imagen
+# numpy<2: torch 2.0.1 (cu118) fue compilado contra NumPy 1.x; con 2.x falla
+# con "Failed to initialize NumPy: _ARRAY_API not found".
+numpy<2
+pillow
+tqdm
+# opencv-python>=4.11 exige numpy>=2 -> incompatible con el pin de arriba.
+opencv-python==4.10.0.84
+
+# Alineado de rostros (estilo FFHQ)
+# dlib requiere cmake en el sistema (Arch: sudo pacman -S cmake)
+dlib
+
+# Metricas
+lpips
+# insightface  # opcional, para preservacion de identidad (ArcFace)
+
+# Agente LLM (solo si usas backend HTTP / Ollama)
+requests
+
+# Necesarias por los repos StyleGAN2-ADA / e4e
+ninja
+scipy
+click
+requests
+psutil
+imageio
+imageio-ffmpeg
+matplotlib

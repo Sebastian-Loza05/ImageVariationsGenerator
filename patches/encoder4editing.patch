@@ -1,0 +1,90 @@
+diff --git a/configs/data_configs.py b/configs/data_configs.py
+index deccb0b..b787e9c 100644
+--- a/configs/data_configs.py
++++ b/configs/data_configs.py
+@@ -3,6 +3,14 @@ from configs.paths_config import dataset_paths
+ 
+ 
+ DATASETS = {
++	# Nuestro dataset (proyecto). 'encode' = autoencoding: source == target.
++	'my_data_encode': {
++		'transforms': transforms_config.EncodeTransforms,
++		'train_source_root': dataset_paths['my_data_train'],
++		'train_target_root': dataset_paths['my_data_train'],
++		'test_source_root': dataset_paths['my_data_val'],
++		'test_target_root': dataset_paths['my_data_val'],
++	},
+ 	'ffhq_encode': {
+ 		'transforms': transforms_config.EncodeTransforms,
+ 		'train_source_root': dataset_paths['ffhq'],
+diff --git a/configs/paths_config.py b/configs/paths_config.py
+index 4604f60..acfb247 100644
+--- a/configs/paths_config.py
++++ b/configs/paths_config.py
+@@ -1,4 +1,9 @@
+ dataset_paths = {
++	#  Nuestro dataset de rostros (proyecto): rostros alineados 256, split train/val.
++	#  Rutas ABSOLUTAS porque train.py corre con cwd = raiz del repo e4e.
++	'my_data_train': '/home/Loza05/Documents/2026-1/IA/Proyecto2/generative_faces/data/e4e_train',
++	'my_data_val':   '/home/Loza05/Documents/2026-1/IA/Proyecto2/generative_faces/data/e4e_val',
++
+ 	#  Face Datasets (In the paper: FFHQ - train, CelebAHQ - test)
+ 	'ffhq': '',
+ 	'celeba_test': '',
+diff --git a/models/psp.py b/models/psp.py
+index e3e6fd2..08d04e1 100644
+--- a/models/psp.py
++++ b/models/psp.py
+@@ -22,7 +22,10 @@ class pSp(nn.Module):
+         self.opts = opts
+         # Define architecture
+         self.encoder = self.set_encoder()
+-        self.decoder = Generator(opts.stylegan_size, 512, 8, channel_multiplier=2)
++        # channel_multiplier=1: nuestro generador fue fine-tuneado con --cfg paper256
++        # (channel_base=16384 -> medio ancho). El default cm=2 no calza con sus pesos.
++        self.decoder = Generator(opts.stylegan_size, 512, 8,
++                                 channel_multiplier=getattr(opts, "channel_multiplier", 1))
+         self.face_pool = torch.nn.AdaptiveAvgPool2d((256, 256))
+         # Load weights if needed
+         self.load_weights()
+diff --git a/training/coach.py b/training/coach.py
+index 10b22a6..142ea2a 100644
+--- a/training/coach.py
++++ b/training/coach.py
+@@ -41,7 +41,8 @@ class Coach:
+         if self.opts.lpips_lambda > 0:
+             self.lpips_loss = LPIPS(net_type=self.opts.lpips_type).to(self.device).eval()
+         if self.opts.id_lambda > 0:
+-            if 'ffhq' in self.opts.dataset_type or 'celeb' in self.opts.dataset_type:
++            # 'my_data' = nuestro dataset de ROSTROS -> ArcFace (IR-SE50), no MoCo.
++            if any(k in self.opts.dataset_type for k in ('ffhq', 'celeb', 'my_data')):
+                 self.id_loss = id_loss.IDLoss().to(self.device).eval()
+             else:
+                 self.id_loss = moco_loss.MocoLoss(opts).to(self.device).eval()
+@@ -190,6 +191,17 @@ class Coach:
+         save_dict = self.__get_save_dict()
+         checkpoint_path = os.path.join(self.checkpoint_dir, save_name)
+         torch.save(save_dict, checkpoint_path)
++        # Mantener solo los ultimos 2 iteration_*.pt (los checkpoints con
++        # save_training_data pesan ~1GB); best_model.pt no se toca.
++        if not is_best:
++            import glob, re
++            iters = glob.glob(os.path.join(self.checkpoint_dir, 'iteration_*.pt'))
++            iters.sort(key=lambda p: int(re.findall(r'iteration_(\d+)\.pt', p)[0]))
++            for old in iters[:-2]:
++                try:
++                    os.remove(old)
++                except OSError:
++                    pass
+         with open(os.path.join(self.checkpoint_dir, 'timestamp.txt'), 'a') as f:
+             if is_best:
+                 f.write(
+@@ -295,7 +307,7 @@ class Coach:
+ 
+     def parse_and_log_images(self, id_logs, x, y, y_hat, title, subscript=None, display_count=2):
+         im_data = []
+-        for i in range(display_count):
++        for i in range(min(display_count, x.shape[0])):  # robusto a batch_size 1
+             cur_im_data = {
+                 'input_face': common.log_input_image(x[i], self.opts),
+                 'target_face': common.tensor2im(y[i]),

@@ -1,0 +1,51 @@
+diff --git a/torch_utils/ops/conv2d_gradfix.py b/torch_utils/ops/conv2d_gradfix.py
+index e95e10d..795b48f 100755
+--- a/torch_utils/ops/conv2d_gradfix.py
++++ b/torch_utils/ops/conv2d_gradfix.py
+@@ -52,7 +52,9 @@ def _should_use_custom_op(input):
+         return False
+     if any(torch.__version__.startswith(x) for x in ['1.7.', '1.8.', '1.9']):
+         return True
+-    warnings.warn(f'conv2d_gradfix not supported on PyTorch {torch.__version__}. Falling back to torch.nn.functional.conv2d().')
++    # torch 2.x: el custom op no es compatible; usamos conv2d nativo (que SI
++    # soporta el doble-backward de la R1). Silenciamos el warning para no tapar
++    # las lineas de progreso 'tick' en consola.
+     return False
+ 
+ def _tuple_of_ints(xs, ndim):
+diff --git a/torch_utils/ops/grid_sample_gradfix.py b/torch_utils/ops/grid_sample_gradfix.py
+index ca6b341..fdf95c3 100755
+--- a/torch_utils/ops/grid_sample_gradfix.py
++++ b/torch_utils/ops/grid_sample_gradfix.py
+@@ -32,12 +32,11 @@ def grid_sample(input, grid):
+ #----------------------------------------------------------------------------
+ 
+ def _should_use_custom_op():
+-    if not enabled:
+-        return False
+-    if any(torch.__version__.startswith(x) for x in ['1.7.', '1.8.', '1.9']):
+-        return True
+-    warnings.warn(f'grid_sample_gradfix not supported on PyTorch {torch.__version__}. Falling back to torch.nn.functional.grid_sample().')
+-    return False
++    # PyTorch >=1.11/2.x sigue sin implementar la 2da derivada nativa de
++    # grid_sample (necesaria para la R1 a traves del pipe de augmentation).
++    # El custom op de abajo la implementa, asi que lo usamos siempre que
++    # 'enabled' este activo, sin la antigua restriccion de version.
++    return enabled
+ 
+ #----------------------------------------------------------------------------
+ 
+@@ -61,8 +60,11 @@ class _GridSample2dForward(torch.autograd.Function):
+ class _GridSample2dBackward(torch.autograd.Function):
+     @staticmethod
+     def forward(ctx, grad_output, input, grid):
+-        op = torch._C._jit_get_operation('aten::grid_sampler_2d_backward')
+-        grad_input, grad_grid = op(grad_output, input, grid, 0, 0, False)
++        # torch 2.x: _jit_get_operation devuelve una tupla y la firma de
++        # grid_sampler_2d_backward exige output_mask. Usamos la API estable
++        # torch.ops.aten con output_mask=[True, True] (grad de input y grid).
++        op = torch.ops.aten.grid_sampler_2d_backward
++        grad_input, grad_grid = op(grad_output, input, grid, 0, 0, False, [True, True])
+         ctx.save_for_backward(grid)
+         return grad_input, grad_grid
+ 

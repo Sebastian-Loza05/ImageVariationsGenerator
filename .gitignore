@@ -1,0 +1,42 @@
+# --- Entorno de Python ---
+.venv/
+__pycache__/
+*.py[cod]
+
+# --- Dataset (público de Kaggle, ~1.6 GB; no se versiona) ---
+data/
+
+# --- Salidas de entrenamiento: checkpoints, snapshots, logs (~21 GB) ---
+runs/
+
+# --- Pesos de modelos y predictores (grandes; ver README para obtenerlos) ---
+pretrained/
+*.pt
+*.pkl
+*.dat
+*.npy
+
+# --- Comprimidos ---
+*.zip
+
+# --- Salidas que el backend genera en runtime ---
+backend/storage/
+
+# --- Logs de decisiones de la app ---
+logs/
+
+# --- Imágenes de prueba generadas ---
+inference_test.png
+reconstruccion.png
+
+# --- Estado/config local de Claude Code y directorio basura ---
+.claude/
+{src,configs,scripts,docs}/
+
+# --- Sistema ---
+.DS_Store
+
+
+# --- Archivos ----
+scripts/check_env.py
+scripts/test_inference.py
