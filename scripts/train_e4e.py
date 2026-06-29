@@ -1,37 +1,3 @@
-"""
-03_train_e4e.py — Entrena el encoder e4e contra NUESTRO generador fine-tuneado.
-
-Por que re-entrenar el e4e en vez de usar el de FFHQ tal cual:
-  El e4e oficial invierte hacia el StyleGAN FFHQ original. Como nosotros
-  fine-tuneamos el generador sobre nuestro dataset, el espacio latente cambio.
-  Entrenar el encoder contra NUESTRO generador es lo que hace que la inversion
-  sea fiel a nuestras caras -> y es entrenamiento propio genuino (nivel avanzado).
-
-REANUDABLE + ANTI-OOM (lo importante de esta version):
-  - --save_training_data + --save_interval: guarda paso + optimizador +
-    discriminador cada N pasos, asi se puede RETOMAR exacto si se corta/falla.
-  - --keep_optimizer: al reanudar restaura el estado del optimizador.
-  - coach.py podado: mantiene solo los ultimos 2 iteration_*.pt (esos pesan ~1GB
-    con el estado completo, si no se llena el disco).
-  - batch 2 + PYTORCH_CUDA_ALLOC_CONF: el progressive training activa mas capas
-    con el tiempo -> la VRAM CRECE conforme avanza -> con batch 4 daba OOM a la
-    mitad. Con batch 2 entra en 8GB de principio a fin.
-
-Prerequisitos (ya configurados en este proyecto):
-  - pretrained/our_generator_rosinality.pt   (conversion del .pkl, script aparte)
-  - encoder4editing/pretrained_models/model_ir_se50.pth   (id loss + init encoder)
-  - configs/data_configs.py -> 'my_data_encode'  (apunta al split train/val)
-
-Uso (corrida NUEVA):
-    python scripts/03_train_e4e.py \
-        --repo ../encoder4editing \
-        --outdir runs/e4e2
-
-Uso (RETOMAR tras un corte/OOM, continua exacto desde el ultimo checkpoint):
-    python scripts/03_train_e4e.py \
-        --repo ../encoder4editing \
-        --resume_from runs/e4e2/checkpoints/iteration_NNNN.pt
-"""
 import argparse
 import os
 import subprocess
@@ -61,18 +27,14 @@ def main():
     repo_root = Path(args.repo).resolve()
     train_py = repo_root / "scripts" / "train.py"
     if not train_py.exists():
-        sys.exit(f"No encuentro {train_py}. Clona omertov/encoder4editing.")
+        sys.exit(f"No encuentro {train_py}.")
 
     py = sys.executable
 
     if args.resume_from:
-        # train.py recupera TODO del checkpoint (opts, paso, optimizador,
-        # discriminador). No recrea el exp_dir, asi que no choca. No hacen falta
-        # mas flags: salen del propio checkpoint.
         resume = str(Path(args.resume_from).resolve())
         cmd = [py, str(train_py), "--resume_training_from_ckpt", resume]
     else:
-        # Corrida nueva (o warm-start). e4e EXIGE que el exp_dir no exista.
         exp_dir = Path(args.outdir).resolve()
         if exp_dir.exists():
             sys.exit(f"'{exp_dir}' ya existe y e4e se niega a sobreescribir.\n"
@@ -95,7 +57,6 @@ def main():
             "--batch_size", str(args.batch),
             "--test_batch_size", "2",
             "--test_workers", "1",
-            # --- reanudabilidad ---
             "--save_training_data",                  # guarda paso/optimizador/discriminador
             "--save_interval", str(args.save_interval),
             "--keep_optimizer",                      # al reanudar, restaura el optimizador
@@ -103,20 +64,16 @@ def main():
         if args.init_from:
             cmd += ["--checkpoint_path", str(Path(args.init_from).resolve())]
 
-    # Reduce la fragmentacion de VRAM (ayuda con OOM tardios en torch 2.x).
     env = os.environ.copy()
     env["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 
-    print(f"Comando e4e (cwd={repo_root}):\n")
-    print("  " + " \\\n  ".join(cmd))
-    print()
     if args.dry_run:
         print("[dry-run] No se ejecuto.")
         return
     if args.resume_from:
         print("Reanudando desde checkpoint (continua en el paso guardado + 1).\n")
     else:
-        print("Iniciando e4e. Si AUN asi se desborda la VRAM, baja a --batch 1.\n")
+        print("Iniciando e4e.\n")
     subprocess.run(cmd, check=True, cwd=str(repo_root), env=env)
 
 

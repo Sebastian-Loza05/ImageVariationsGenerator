@@ -1,28 +1,3 @@
-"""
-01_prepare_data.py — Prepara el dataset Human Faces (Kaggle) para StyleGAN2-ADA.
-
-Dataset: https://www.kaggle.com/datasets/kaustubhdhote/human-faces-dataset
-
-Pasos:
-  1. Alinear y recortar cada rostro al estilo FFHQ (dlib 68 landmarks).
-     Esto es CRÍTICO: StyleGAN2 FFHQ espera rostros centrados y alineados.
-     Sin alineado, ni el fine-tune ni la inversion e4e funcionan bien.
-  2. Redimensionar a 256x256.
-  3. Empaquetar al formato .zip que espera dataset_tool.py de stylegan2-ada-pytorch.
-
-Librerias a instalar:
-    pip install pillow numpy tqdm dlib opencv-python
-    # dlib en Arch puede requerir:  sudo pacman -S cmake  (y boost)
-    # Descarga el predictor de landmarks:
-    #   http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
-
-Uso:
-    python scripts/01_prepare_data.py \
-        --raw_dir   data/human_faces_raw \
-        --out_dir   data/faces_aligned_256 \
-        --predictor pretrained/shape_predictor_68_face_landmarks.dat \
-        --size 256
-"""
 import argparse
 import os
 from pathlib import Path
@@ -37,19 +12,16 @@ def get_landmarks(img_path, detector, predictor):
     try:
         img = dlib.load_rgb_image(str(img_path))
     except RuntimeError:
-        return None  # archivo corrupto/ilegible -> se salta, no crashea
+        return None
     dets = detector(img, 1)
     if len(dets) == 0:
         return None
-    # Tomamos el rostro mas grande (asumimos retrato principal).
     det = max(dets, key=lambda d: d.width() * d.height())
     shape = predictor(img, det)
     return np.array([[p.x, p.y] for p in shape.parts()])
 
 
 def align_face(img_path, landmarks, output_size=256, transform_size=1024):
-    """Alineado estilo FFHQ (basado en el script oficial de NVIDIA).
-    Usa los landmarks de ojos y boca para definir un recorte canonico."""
     lm = landmarks
     lm_eye_left, lm_eye_right = lm[36:42], lm[42:48]
     lm_mouth_outer = lm[48:60]
@@ -100,7 +72,7 @@ def main():
     try:
         import dlib
     except ImportError:
-        raise SystemExit("Falta dlib:  pip install dlib  (requiere cmake en Arch)")
+        raise SystemExit("Falta dlib")
 
     detector = dlib.get_frontal_face_detector()
     predictor = dlib.shape_predictor(args.predictor)
@@ -124,9 +96,6 @@ def main():
             skipped += 1
 
     print(f"\nListas: {kept}  |  Descartadas (sin rostro detectable): {skipped}")
-    print(f"\nAhora empaqueta para StyleGAN2-ADA:")
-    print(f"  python dataset_tool.py --source {args.out_dir} "
-          f"--dest data/faces_{args.size}.zip")
 
 
 if __name__ == "__main__":

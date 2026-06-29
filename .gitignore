@@ -40,3 +40,5 @@ reconstruccion.png
 # --- Archivos ----
 scripts/check_env.py
 scripts/test_inference.py
+scripts/eval_metrics.py
+scripts/06_poll_generate.py
